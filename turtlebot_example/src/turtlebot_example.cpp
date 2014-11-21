@@ -20,13 +20,21 @@
 #include "turtlebot_example.h"
 #include "rrt.h"
 
+#include <random>
+
 ros::Publisher marker_pub;
 
 #define TAGID 0
 
 Milestone* initial;
 bool once = true;
+bool endRRT = false;
+std::vector<Milestone*> *nodes;
+Map* globalMap;
+int threshold = 0; 
 
+
+static default_random_engine gen;
 //Callback function for the Position topic (LIVE)
 
 
@@ -46,15 +54,6 @@ void pose_callback(const geometry_msgs::PoseWithCovarianceStamped & msg)
 	std::cout << "X: " << X << ", Y: " << Y << ", Yaw: " << Yaw << std::endl ;
 }
 
-void makeRRT()
-{
-  initial->makeRandomNode()
-}
-
-void checkToGoal(Pose waypoint)
-{
-
-}
 
 //Example of drawing a curve
 void drawCurve(int k) 
@@ -99,11 +98,51 @@ void drawCurve(int k)
 void map_callback(const nav_msgs::OccupancyGrid& msg)
 {
     Map* map = new Map(msg);
-    initial->makeRandomNode(*map);
+    nodes->push_back(initial->makeRandomNode(*map));
+    globalMap = map;
     //This function is called when a new map is received
     
     //you probably want to save the map into a form which is easy to work with
 }
+
+bool checkToGoal(Milestone* newNode, Pose waypoint) // return true when node is close to goal
+{
+  if (sqrt
+      (((newNode->getMDestination().position.x - waypoint.position.x)*(newNode->getMDestination().position.x - waypoint.position.x)) +
+      ((newNode->getMDestination().position.y - waypoint.position.y)*(newNode->getMDestination().position.y - waypoint.position.y))) > threshold)
+    return true;
+  else
+    return false;
+}
+
+void makeRRT(Pose waypoint)
+{
+  int sizeNodes = nodes->size();
+  uniform_int_distribution<> nodeSelect(0, sizeNodes);
+
+  int index = nodeSelect(gen);
+
+  Milestone* newNode = (*nodes)[index]->makeRandomNode(*globalMap);
+
+  endRRT = !checkToGoal(newNode, waypoint);
+
+  nodes->push_back(newNode); //NEED A MAP OBJECT TO PASS IN
+}
+
+std::vector<Pose> createPath()
+{
+  std::vector<Pose> pose;
+  Milestone* milestoneptr = (*nodes)[nodes->size()-1];
+  pose.push_back(milestoneptr->getMDestination());
+  while (milestoneptr != initial)
+  {
+    milestoneptr = milestoneptr->getOrigin();
+    pose.push_back(milestoneptr->getMDestination());
+  }
+
+  return pose;
+}
+
 
 
 int main(int argc, char **argv)
@@ -111,6 +150,8 @@ int main(int argc, char **argv)
 	//Initialize the ROS framework
     ros::init(argc,argv,"main_control");
     ros::NodeHandle n;
+
+    nodes = new std::vector<Milestone*>;
 
     //Subscribe to the desired topics and assign callbacks
     ros::Subscriber map_sub = n.subscribe("/map", 1, map_callback);
@@ -125,6 +166,8 @@ int main(int argc, char **argv)
 
     //Set the loop rate
     ros::Rate loop_rate(20);    //20Hz update rate
+
+    Pose waypoint;
 	
 
     while (ros::ok())
@@ -132,6 +175,12 @@ int main(int argc, char **argv)
     	loop_rate.sleep(); //Maintain the loop rate
     	ros::spinOnce();   //Check for new messages 
 
+      if (!endRRT)
+      {
+        makeRRT(waypoint);
+       }
+       else
+      
 
 	 //Draw Curves
          drawCurve(1);

@@ -19,6 +19,7 @@ class Milestone {
     Pose getDestination(Map map);
     Milestone* makeRandomNode(Map map);
     bool isValid() {return mIsValid;};
+    Pose getMDestination() {return mDestination;};
 
   private:
     Milestone* mOrigin;
